@@ -1,5 +1,7 @@
 import { WikipediaQueryRun } from '@langchain/community/tools/wikipedia_query_run';
 import {
+	type IExecuteFunctions,
+	type INodeExecutionData,
 	NodeConnectionTypes,
 	type INodeType,
 	type INodeTypeDescription,
@@ -9,6 +11,14 @@ import {
 
 import { logWrapper } from '@utils/logWrapper';
 import { getConnectionHintNoticeField } from '@utils/sharedFields';
+
+function getTool(ctx: ISupplyDataFunctions | IExecuteFunctions): WikipediaQueryRun {
+	const WikiTool = new WikipediaQueryRun();
+	WikiTool.name = ctx.getNode().name;
+	WikiTool.description =
+		'A tool for interacting with and fetching data from the Wikipedia API. The input should always be a string query.';
+	return WikiTool;
+}
 
 export class ToolWikipedia implements INodeType {
 	description: INodeTypeDescription = {
@@ -44,13 +54,32 @@ export class ToolWikipedia implements INodeType {
 	};
 
 	async supplyData(this: ISupplyDataFunctions): Promise<SupplyData> {
-		const WikiTool = new WikipediaQueryRun();
-
-		WikiTool.description =
-			'A tool for interacting with and fetching data from the Wikipedia API. The input should always be a string query.';
-
 		return {
-			response: logWrapper(WikiTool, this),
+			response: logWrapper(getTool(this), this),
 		};
+	}
+
+	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
+		console.log('ToolWikipedia execute');
+		const WikiTool = getTool(this);
+
+		const items = this.getInputData();
+
+		const response: INodeExecutionData[][] = [];
+		for (let itemIndex = 0; itemIndex < this.getInputData().length; itemIndex++) {
+			const item = items[itemIndex];
+			if (item === undefined) {
+				continue;
+			}
+			const result = await WikiTool.invoke(item.json);
+			response.push([
+				{
+					json: { response: result },
+					pairedItem: { item: itemIndex },
+				},
+			]);
+		}
+
+		return response;
 	}
 }

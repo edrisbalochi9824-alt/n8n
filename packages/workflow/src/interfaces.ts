@@ -425,6 +425,8 @@ export interface IExecuteData {
 	metadata?: ITaskMetadata;
 	node: INode;
 	source: ITaskDataConnectionsSource | null;
+	// TODO: try to make this required
+	runIndex?: number;
 }
 
 export type IContextObject = {
@@ -974,6 +976,8 @@ export type IExecuteFunctions = ExecuteFunctions.GetNodeParameterFn &
 		getInputData(inputIndex?: number, connectionType?: NodeConnectionType): INodeExecutionData[];
 		getNodeInputs(): INodeInputConfiguration[];
 		getNodeOutputs(): INodeOutputConfiguration[];
+		getSubnodes(connectionType: NodeConnectionType): string[];
+		getRunIndex(): number;
 		putExecutionToWait(waitTill: Date): Promise<void>;
 		sendMessageToUI(message: any): void;
 		sendResponse(response: IExecuteResponsePromiseData): void;
@@ -1060,6 +1064,7 @@ export type ISupplyDataFunctions = ExecuteFunctions.GetNodeParameterFn &
 		evaluateExpression(expression: string, itemIndex: number): NodeParameterValueType;
 		getWorkflowDataProxy(itemIndex: number): IWorkflowDataProxyData;
 		getExecutionCancelSignal(): AbortSignal | undefined;
+		getSubnodes(connectionType: NodeConnectionType): string[];
 		onExecutionCancellation(handler: () => unknown): void;
 		logAiEvent(eventName: AiEvent, msg?: string): void;
 		cloneWith(replacements: {
@@ -1701,7 +1706,7 @@ type NodeOutput = INodeExecutionData[][] | NodeExecutionWithMetadata[][] | null;
 export interface INodeType {
 	description: INodeTypeDescription;
 	supplyData?(this: ISupplyDataFunctions, itemIndex: number): Promise<SupplyData>;
-	execute?(this: IExecuteFunctions): Promise<NodeOutput>;
+	execute?(this: IExecuteFunctions, responses?: SubNodeExecutionResult[]): Promise<NodeOutput>;
 	/**
 	 * A function called when a node receives a chat message. Allows it to react
 	 * to the message before it gets executed.
@@ -1757,13 +1762,35 @@ export interface INodeType {
 	};
 }
 
+type ExecutionNodeAction<T extends unknown> = {
+	actionType: 'ExecutionNodeAction';
+	nodeName: string;
+	input: IDataObject;
+	// input: string | Record<string, unknown>;
+	// input: INodeExecutionData[][] | null | undefined;
+	type: NodeConnectionType;
+	id: string;
+	metadata: T;
+};
+type Action<T = unknown> = ExecutionNodeAction<T>;
+export type Request<T = unknown> = {
+	actions: Array<Action<T>>;
+};
+export type SubNodeExecutionResult<T = unknown> = {
+	action: ExecutionNodeAction<T>;
+	data: ITaskData;
+};
+
 /**
  * This class serves as the base for all nodes using the new context API
  * having this as a class enables us to identify these instances at runtime
  */
 export abstract class Node {
 	abstract description: INodeTypeDescription;
-	execute?(context: IExecuteFunctions): Promise<INodeExecutionData[][]>;
+	execute?(
+		context: IExecuteFunctions,
+		response?: SubNodeExecutionResult[],
+	): Promise<INodeExecutionData[][] | Request<unknown>>;
 	webhook?(context: IWebhookFunctions): Promise<IWebhookResponseData>;
 	poll?(context: IPollFunctions): Promise<INodeExecutionData[][] | null>;
 }
@@ -2351,6 +2378,12 @@ export interface ITaskMetadata {
 	parentExecution?: RelatedExecution;
 	subExecution?: RelatedExecution;
 	subExecutionsCount?: number;
+	subNodeExecutionData?: Array<{
+		nodeName: string;
+		runIndex: number;
+		action: Request['actions'][number];
+		response?: unknown;
+	}>;
 }
 
 /** The data that gets returned when a node execution starts */

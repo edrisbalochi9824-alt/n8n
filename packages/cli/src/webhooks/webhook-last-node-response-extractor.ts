@@ -56,11 +56,19 @@ function extractFirstEntryJsonFromTaskData(
 	context: WebhookExecutionContext,
 	lastNodeTaskData: ITaskData,
 ): Result<StaticResponse, OperationalError> {
-	if (lastNodeTaskData.data!.main[0]![0] === undefined) {
-		return createResultError(new OperationalError('No item to return was found'));
+	let lastNodeFirstJsonItem: unknown = null;
+	if (Object.prototype.hasOwnProperty.call(lastNodeTaskData.data, 'main')) {
+		if (lastNodeTaskData.data!.main[0]![0] === undefined) {
+			return createResultError(new OperationalError('No item to return was found'));
+		}
+		lastNodeFirstJsonItem = lastNodeTaskData.data!.main[0]![0].json;
+	} else if (Object.prototype.hasOwnProperty.call(lastNodeTaskData.data, 'ai_tool')) {
+		lastNodeFirstJsonItem = lastNodeTaskData.data!.ai_tool[0]![0].json;
 	}
 
-	let lastNodeFirstJsonItem: unknown = lastNodeTaskData.data!.main[0]![0].json;
+	if (lastNodeFirstJsonItem === null) {
+		return createResultError(new OperationalError('No item to return was found'));
+	}
 
 	const responsePropertyName =
 		context.evaluateSimpleWebhookDescriptionExpression<string>('responsePropertyName');

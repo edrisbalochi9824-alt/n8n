@@ -169,6 +169,22 @@ export class SupplyDataContext extends BaseExecuteContext implements ISupplyData
 		return super.getInputItems(inputIndex, connectionType) ?? [];
 	}
 
+	getSubnodes(connectionType: NodeConnectionType): string[] {
+		const connections =
+			this.workflow.connectionsByDestinationNode?.[this.node.name]?.[connectionType];
+		if (!connections) return [];
+
+		const nodeNames: string[] = [];
+		for (const connectionArray of connections) {
+			if (connectionArray) {
+				for (const connection of connectionArray) {
+					nodeNames.push(connection.node);
+				}
+			}
+		}
+		return nodeNames;
+	}
+
 	getNextRunIndex(): number {
 		const nodeName = this.node.name;
 		return this.runExecutionData.resultData.runData[nodeName]?.length ?? 0;

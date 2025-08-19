@@ -3,6 +3,7 @@ import type {
 	CallbackManager,
 	ChunkType,
 	CloseFunction,
+	IConnection,
 	IDataObject,
 	IExecuteData,
 	IExecuteFunctions,
@@ -11,8 +12,10 @@ import type {
 	INode,
 	INodeExecutionData,
 	IRunExecutionData,
+	ITaskData,
 	ITaskDataConnections,
 	IWorkflowExecuteAdditionalData,
+	NodeConnectionType,
 	NodeExecutionHint,
 	Result,
 	StructuredChunk,
@@ -45,6 +48,7 @@ import { normalizeItems } from './utils/normalize-items';
 import { getRequestHelperFunctions } from './utils/request-helper-functions';
 import { returnJsonArray } from './utils/return-json-array';
 import { getSSHTunnelFunctions } from './utils/ssh-tunnel-helper-functions';
+import { SubNodeExecutionResult } from 'n8n-workflow';
 
 export class ExecuteContext extends BaseExecuteContext implements IExecuteFunctions {
 	readonly helpers: IExecuteFunctions['helpers'];
@@ -67,6 +71,7 @@ export class ExecuteContext extends BaseExecuteContext implements IExecuteFuncti
 		executeData: IExecuteData,
 		private readonly closeFunctions: CloseFunction[],
 		abortSignal?: AbortSignal,
+		public subNodeExecutionResults?: SubNodeExecutionResult[],
 	) {
 		super(
 			workflow,
@@ -225,6 +230,26 @@ export class ExecuteContext extends BaseExecuteContext implements IExecuteFuncti
 			return [];
 		}
 		return super.getInputItems(inputIndex, connectionType) ?? [];
+	}
+
+	getSubnodes(connectionType: NodeConnectionType): string[] {
+		const connections =
+			this.workflow.connectionsByDestinationNode?.[this.node.name]?.[connectionType];
+		if (!connections) return [];
+
+		const nodeNames: string[] = [];
+		for (const connectionArray of connections) {
+			if (connectionArray) {
+				for (const connection of connectionArray) {
+					nodeNames.push(connection.node);
+				}
+			}
+		}
+		return nodeNames;
+	}
+
+	getRunIndex(): number {
+		return this.runIndex;
 	}
 
 	logNodeOutput(...args: unknown[]): void {
