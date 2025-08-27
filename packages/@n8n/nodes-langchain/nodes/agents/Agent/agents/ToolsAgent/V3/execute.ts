@@ -5,6 +5,11 @@ import type { AIMessageChunk, MessageContentText } from '@langchain/core/message
 import { AIMessage } from '@langchain/core/messages';
 import type { ChatPromptTemplate } from '@langchain/core/prompts';
 import { RunnableSequence } from '@langchain/core/runnables';
+import { getPromptInputByType } from '@utils/helpers';
+import {
+	getOptionalOutputParser,
+	type N8nOutputParser,
+} from '@utils/output_parsers/N8nOutputParser';
 import { type AgentRunnableSequence, createToolCallingAgent } from 'langchain/agents';
 import type { BaseChatMemory } from 'langchain/memory';
 import type { DynamicStructuredTool, Tool } from 'langchain/tools';
@@ -23,15 +28,9 @@ import type {
 	IExecuteFunctions,
 	INodeExecutionData,
 	ISupplyDataFunctions,
-	SubNodeExecutionResult,
+	Response,
 } from 'n8n-workflow';
 import assert from 'node:assert';
-
-import { getPromptInputByType } from '@utils/helpers';
-import {
-	getOptionalOutputParser,
-	type N8nOutputParser,
-} from '@utils/output_parsers/N8nOutputParser';
 
 import {
 	fixEmptyContentMessage,
@@ -206,15 +205,16 @@ type ToolCallData = {
  */
 export async function toolsAgentExecute(
 	this: IExecuteFunctions | ISupplyDataFunctions,
-	responses?: Array<SubNodeExecutionResult<RequestResponseMetadata>>,
+	response?: Response<RequestResponseMetadata>,
 ): Promise<INodeExecutionData[][] | Request<RequestResponseMetadata>> {
 	const steps: ToolCallData[] = [];
 	this.logger.debug('Executing Tools Agent V2');
 
-	if (responses) {
+	if (response) {
+		const responses = response?.actionResponses;
 		for (const tool of responses) {
 			if (tool.action.metadata?.previousRequests) {
-				steps.push(...tool.action.metadata.previousRequests);
+				steps.push.apply(steps, tool.action.metadata.previousRequests);
 			}
 			const toolInput: IDataObject = {
 				...tool.action.input,

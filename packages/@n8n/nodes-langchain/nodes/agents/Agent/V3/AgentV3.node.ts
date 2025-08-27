@@ -1,3 +1,4 @@
+import { promptTypeOptions, textFromPreviousNode, textInput } from '@utils/descriptions';
 import { NodeConnectionTypes } from 'n8n-workflow';
 import type {
 	IExecuteFunctions,
@@ -6,14 +7,13 @@ import type {
 	INodeTypeDescription,
 	INodeTypeBaseDescription,
 	Request,
-	SubNodeExecutionResult,
+	Response,
 } from 'n8n-workflow';
 
-import { promptTypeOptions, textFromPreviousNode, textInput } from '@utils/descriptions';
-
-import { getInputs } from '../utils';
 import { getToolsAgentProperties } from '../agents/ToolsAgent/V3/description';
-import { RequestResponseMetadata, toolsAgentExecute } from '../agents/ToolsAgent/V3/execute';
+import type { RequestResponseMetadata } from '../agents/ToolsAgent/V3/execute';
+import { toolsAgentExecute } from '../agents/ToolsAgent/V3/execute';
+import { getInputs } from '../utils';
 
 export class AgentV3 implements INodeType {
 	description: INodeTypeDescription;
@@ -117,8 +117,8 @@ export class AgentV3 implements INodeType {
 
 	async execute(
 		this: IExecuteFunctions,
-		responses?: SubNodeExecutionResult<RequestResponseMetadata>[],
+		response?: Response<RequestResponseMetadata>,
 	): Promise<INodeExecutionData[][] | Request<RequestResponseMetadata>> {
-		return await toolsAgentExecute.call(this, responses);
+		return await toolsAgentExecute.call(this, response);
 	}
 }

@@ -46,7 +46,7 @@ import type {
 	AiAgentRequest,
 	IWorkflowExecutionDataProcess,
 	Request,
-	SubNodeExecutionResult,
+	Response,
 } from 'n8n-workflow';
 import {
 	LoggerProxy as Logger,
@@ -1234,7 +1234,7 @@ export class WorkflowExecute {
 		inputData: ITaskDataConnections,
 		executionData: IExecuteData,
 		abortSignal?: AbortSignal,
-		subNodeExecutionResults?: SubNodeExecutionResult[],
+		subNodeExecutionResults?: Response,
 	): Promise<IRunNodeResponse | Request> {
 		const closeFunctions: CloseFunction[] = [];
 		const context = new ExecuteContext(
@@ -1307,7 +1307,6 @@ export class WorkflowExecute {
 		inputData: ITaskDataConnections,
 		executionData: IExecuteData,
 		abortSignal?: AbortSignal,
-		_subNodeExecutionResults?: SubNodeExecutionResult[],
 	): Promise<IRunNodeResponse | Request> {
 		const closeFunctions: CloseFunction[] = [];
 		const context = new SupplyDataContext(
@@ -1519,7 +1518,7 @@ export class WorkflowExecute {
 		additionalData: IWorkflowExecuteAdditionalData,
 		mode: WorkflowExecuteMode,
 		abortSignal?: AbortSignal,
-		subNodeExecutionResults?: SubNodeExecutionResult[],
+		subNodeExecutionResults?: Response,
 	): Promise<IRunNodeResponse | Request> {
 		const { node } = executionData;
 		let inputData = executionData.data;
@@ -1581,7 +1580,6 @@ export class WorkflowExecute {
 				inputData,
 				executionData,
 				abortSignal,
-				subNodeExecutionResults,
 			);
 		}
 
@@ -1728,7 +1726,7 @@ export class WorkflowExecute {
 
 		// Variables which hold temporary data for each node-execution
 		let executionData: IExecuteData;
-		const subNodeExecutionResults: SubNodeExecutionResult[] = [];
+		const subNodeExecutionResults: Response = { actionResponses: [], metadata: {} };
 		let executionError: ExecutionBaseError | undefined;
 		let executionNode: INode;
 		let runIndex: number;
@@ -1915,11 +1913,13 @@ export class WorkflowExecute {
 								nodeSuccessData = [nodePinData]; // always zeroth runIndex
 							} else {
 								if (executionData.metadata?.subNodeExecutionData) {
-									for (const subNode of executionData.metadata.subNodeExecutionData) {
+									subNodeExecutionResults.metadata =
+										executionData.metadata.subNodeExecutionData.metadata;
+									for (const subNode of executionData.metadata.subNodeExecutionData.actions) {
 										const nodeRunData = this.runExecutionData.resultData.runData[subNode.nodeName];
 										if (nodeRunData && nodeRunData[subNode.runIndex]) {
 											const data = nodeRunData[subNode.runIndex];
-											subNodeExecutionResults.push({
+											subNodeExecutionResults.actionResponses.push({
 												data,
 												action: subNode.action,
 											});
@@ -1993,7 +1993,10 @@ export class WorkflowExecute {
 										runIndex: number;
 										nodeRunIndex: number;
 									}> = [];
-									const subNodeExecutionData: ITaskMetadata['subNodeExecutionData'] = [];
+									const subNodeExecutionData: ITaskMetadata['subNodeExecutionData'] = {
+										actions: [],
+										metadata: runNodeData.metadata,
+									};
 									for (const action of runNodeData.actions) {
 										const node = workflow.getNode(action.nodeName)!;
 										node.rewireOutputLogTo = action.type;
@@ -2036,7 +2039,7 @@ export class WorkflowExecute {
 											runIndex,
 											nodeRunIndex,
 										});
-										subNodeExecutionData.push({
+										subNodeExecutionData.actions.push({
 											action,
 											nodeName: action.nodeName,
 											runIndex: nodeRunIndex,
