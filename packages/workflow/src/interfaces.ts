@@ -1701,7 +1701,7 @@ export interface SupplyData {
 	closeFunction?: CloseFunction;
 }
 
-type NodeOutput = INodeExecutionData[][] | NodeExecutionWithMetadata[][] | null;
+type NodeOutput = INodeExecutionData[][] | NodeExecutionWithMetadata[][] | Request | null;
 
 export interface INodeType {
 	description: INodeTypeDescription;
