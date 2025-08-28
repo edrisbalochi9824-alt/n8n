@@ -7,7 +7,7 @@ import type {
 	INodeExecutionData,
 	IWorkflowExecutionDataProcess,
 } from 'n8n-workflow';
-import { Workflow, BINARY_ENCODING } from 'n8n-workflow';
+import { Workflow, BINARY_ENCODING, UnexpectedError } from 'n8n-workflow';
 
 import { NotFoundError } from '@/errors/response-errors/not-found.error';
 import * as WorkflowExecuteAdditionalData from '@/workflow-execute-additional-data';
@@ -130,10 +130,15 @@ export class ChatExecutionManager {
 	private async getRunData(execution: IExecutionResponse, message: ChatMessage) {
 		const { workflowData, mode: executionMode, data: runExecutionData } = execution;
 
-		runExecutionData.executionData!.nodeExecutionStack[0].data.main = (await this.runNode(
-			execution,
-			message,
-		)) ?? [[{ json: message }]];
+		const result = await this.runNode(execution, message);
+
+		if (result && 'actions' in result) {
+			throw new UnexpectedError("Can't handle actions inside the chat trigger.");
+		}
+
+		runExecutionData.executionData!.nodeExecutionStack[0].data.main = result ?? [
+			[{ json: message }],
+		];
 
 		let project: Project | undefined = undefined;
 		try {
