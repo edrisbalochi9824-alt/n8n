@@ -3,14 +3,24 @@ import type {
 	IDataObject,
 	IRunExecutionData,
 	IWorkflowExecuteAdditionalData,
+	Response,
 	WorkflowExecuteMode,
 } from 'n8n-workflow';
 import { ApplicationError } from 'n8n-workflow';
 
+import { NodeTypes } from '@test/helpers';
+
 import { DirectedGraph } from '../partial-execution-utils';
 import { createNodeData, toITaskData } from '../partial-execution-utils/__tests__/helpers';
 import { WorkflowExecute } from '../workflow-execute';
-import { types, nodeTypes } from './mock-node-types';
+import {
+	types,
+	nodeTypes,
+	passThroughNode,
+	nodeTypeArguments,
+	modifyNode,
+} from './mock-node-types';
+import { expects } from '@n8n/client-oauth2/src/utils';
 
 describe('processRunExecutionData', () => {
 	const runHook = jest.fn().mockResolvedValue(undefined);
@@ -216,6 +226,135 @@ describe('processRunExecutionData', () => {
 			// The function returns a Promise, but throws synchronously, so we can't await it.
 			// eslint-disable-next-line @typescript-eslint/promise-function-async
 			expect(() => workflowExecute.processRunExecutionData(workflow)).not.toThrowError();
+		});
+	});
+
+	describe('waiting tools', () => {
+		test('handles Request objects with actions correctly', async () => {
+			// ARRANGE
+			let response: Response | undefined;
+
+			const tool1Node = createNodeData({ name: 'tool1', type: types.passThrough });
+			const tool2Node = createNodeData({ name: 'tool2', type: types.passThrough });
+			const tool1Input = { query: 'test input' };
+			const tool2Input = { data: 'another input' };
+			const nodeTypeWithRequests = modifyNode(passThroughNode)
+				.return({
+					actions: [
+						{
+							actionType: 'ExecutionNodeAction',
+							nodeName: tool1Node.name,
+							input: tool1Input,
+							type: 'ai_tool',
+							id: 'action_1',
+							metadata: {},
+						},
+						{
+							actionType: 'ExecutionNodeAction',
+							nodeName: tool2Node.name,
+							input: tool2Input,
+							type: 'ai_tool',
+							id: 'action_2',
+							metadata: {},
+						},
+					],
+					metadata: { requestId: 'test_request' },
+				})
+				.return((response_) => {
+					response = response_;
+					return [[{ json: { finalResult: 'Agent completed with tool results' } }]];
+				})
+				.done();
+			const nodeWithRequests = createNodeData({
+				name: 'nodeWithRequests',
+				type: 'nodeWithRequests',
+			});
+
+			const nodeTypes = NodeTypes({
+				...nodeTypeArguments,
+				nodeWithRequests: { type: nodeTypeWithRequests, sourcePath: '' },
+			});
+
+			const workflow = new DirectedGraph()
+				.addNodes(nodeWithRequests, tool1Node, tool2Node)
+				.toWorkflow({ name: '', active: false, nodeTypes, settings: { executionOrder: 'v1' } });
+
+			const taskDataConnection = { main: [[{ json: { prompt: 'test prompt' } }]] };
+			const executionData: IRunExecutionData = {
+				startData: { startNodes: [{ name: nodeWithRequests.name, sourceData: null }] },
+				resultData: { runData: {} },
+				executionData: {
+					contextData: {},
+					nodeExecutionStack: [
+						{
+							data: taskDataConnection,
+							node: nodeWithRequests,
+							source: { main: [{ previousNode: 'Start' }] },
+						},
+					],
+					metadata: {},
+					waitingExecution: {},
+					waitingExecutionSource: {},
+				},
+			};
+
+			const workflowExecute = new WorkflowExecute(additionalData, executionMode, executionData);
+
+			// ACT
+			const result = await workflowExecute.processRunExecutionData(workflow);
+
+			// ASSERT
+			// nodeWithRequests has been called with the correct responses
+			expect(response?.actionResponses).toHaveLength(2);
+			for (const r of response?.actionResponses ?? []) {
+				if (r.action.id === 'action_1') {
+					const data = r.data.data?.['ai_tool'];
+					expect(data).toHaveLength(1); // one run
+					expect(data![0]).toHaveLength(1); // one item
+					expect(data![0]![0]).toMatchObject({ json: tool1Input });
+				}
+
+				if (r.action.id === 'action_2') {
+					const data = r.data.data?.['ai_tool'];
+					expect(data).toHaveLength(1); // one run
+					expect(data![0]).toHaveLength(1); // one item
+					expect(data![0]![0]).toMatchObject({ json: tool2Input });
+				}
+			}
+
+			const runData = result.data.resultData.runData;
+
+			// The agent should have been executed and returned a Request with actions
+			expect(runData[nodeWithRequests.name]).toHaveLength(1);
+			expect(runData[nodeWithRequests.name][0].metadata?.subNodeExecutionData).toBeDefined();
+
+			// Tool nodes should have been added to runData with inputOverride
+			expect(runData[tool1Node.name]).toHaveLength(1);
+			expect(runData[tool1Node.name][0].inputOverride).toEqual({
+				ai_tool: [[{ json: { query: 'test input', toolCallId: 'action_1' } }]],
+			});
+
+			expect(runData[tool2Node.name]).toHaveLength(1);
+			expect(runData[tool2Node.name][0].inputOverride).toEqual({
+				ai_tool: [[{ json: { data: 'another input', toolCallId: 'action_2' } }]],
+			});
+
+			// Tools should have executed successfully
+			expect(runData[tool1Node.name][0].data).toBeDefined();
+			expect(runData[tool1Node.name][0].executionStatus).toBe('success');
+			expect(runData[tool2Node.name][0].data).toBeDefined();
+			expect(runData[tool2Node.name][0].executionStatus).toBe('success');
+
+			// Agent should have completed successfully with final result
+			expect(runData[nodeWithRequests.name][0].data).toBeDefined();
+			expect(runData[nodeWithRequests.name][0].executionStatus).toBe('success');
+			const nodeWithRequestsOutput = runData[nodeWithRequests.name][0].data?.main?.[0]?.[0]?.json;
+			expect(runData[nodeWithRequests.name][0].data?.main?.[0]?.[0]?.json?.finalResult).toBe(
+				'Agent completed with tool results',
+			);
+			expect(nodeWithRequestsOutput).toMatchObject({
+				finalResult: 'Agent completed with tool results',
+			});
 		});
 	});
 });
