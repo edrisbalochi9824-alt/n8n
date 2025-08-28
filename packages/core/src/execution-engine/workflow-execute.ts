@@ -1620,19 +1620,6 @@ export class WorkflowExecute {
 		);
 	}
 
-	private setupExecution(): {
-		startedAt: Date;
-		hooks: ExecutionLifecycleHooks;
-	} {
-		const startedAt = new Date();
-		this.status = 'running';
-
-		const { hooks } = this.additionalData;
-		assert.ok(hooks, 'Failed to run workflow due to missing execution lifecycle hooks');
-
-		return { startedAt, hooks };
-	}
-
 	private assertExecutionDataExists(
 		this: WorkflowExecute,
 		executionData: IRunExecutionData['executionData'],
