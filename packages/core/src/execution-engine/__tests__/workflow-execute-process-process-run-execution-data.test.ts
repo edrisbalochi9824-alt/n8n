@@ -20,7 +20,6 @@ import {
 	nodeTypeArguments,
 	modifyNode,
 } from './mock-node-types';
-import { expects } from '@n8n/client-oauth2/src/utils';
 
 describe('processRunExecutionData', () => {
 	const runHook = jest.fn().mockResolvedValue(undefined);
