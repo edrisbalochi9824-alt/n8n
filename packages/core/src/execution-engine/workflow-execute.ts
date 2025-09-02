@@ -1847,7 +1847,7 @@ export class WorkflowExecute {
 
 		// Variables which hold temporary data for each node-execution
 		let executionData: IExecuteData;
-		const subNodeExecutionResults: Response = { actionResponses: [], metadata: {} };
+		let subNodeExecutionResults: Response = { actionResponses: [], metadata: {} };
 		let executionError: ExecutionBaseError | undefined;
 		let executionNode: INode;
 		let runIndex: number;
@@ -1921,6 +1921,8 @@ export class WorkflowExecute {
 					if (this.status === 'canceled') {
 						return;
 					}
+
+					subNodeExecutionResults = { actionResponses: [], metadata: {} };
 
 					let nodeSuccessData: INodeExecutionData[][] | null | undefined = null;
 					executionError = undefined;

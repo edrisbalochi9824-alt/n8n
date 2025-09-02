@@ -443,5 +443,100 @@ describe('processRunExecutionData', () => {
 			// 3. The response callback is never called since the agent's second execution is skipped
 			expect(response).toBeUndefined();
 		});
+
+		test('resets responses between different node executions', async () => {
+			// ARRANGE
+			let firstResponse: Response | undefined;
+			let secondResponse: Response | undefined;
+
+			// Create first node that returns Request with actions
+			const firstNodeWithRequests = modifyNode(passThroughNode)
+				.return({
+					actions: [
+						{
+							actionType: 'ExecutionNodeAction',
+							nodeName: 'tool1',
+							input: { data: 'first node input' },
+							type: 'ai_tool',
+							id: 'first_action',
+							metadata: {},
+						},
+					],
+					metadata: { requestId: 'first_request' },
+				})
+				.return((response?: Response) => {
+					firstResponse = response;
+					return [[{ json: { result: 'first node completed' } }]];
+				})
+				.done();
+
+			// Create second node that should NOT receive responses from the first node
+			const secondNodeWithRequests = modifyNode(passThroughNode)
+				.return((response?: Response) => {
+					secondResponse = response;
+					// This should receive an empty response, not the first node's responses
+					return [[{ json: { result: 'second node completed' } }]];
+				})
+				.done();
+
+			const tool1Node = createNodeData({ name: 'tool1', type: types.passThrough });
+			const firstNode = createNodeData({ name: 'firstNode', type: 'firstNodeType' });
+			const secondNode = createNodeData({ name: 'secondNode', type: 'secondNodeType' });
+
+			const customNodeTypes = NodeTypes({
+				...nodeTypeArguments,
+				firstNodeType: { type: firstNodeWithRequests, sourcePath: '' },
+				secondNodeType: { type: secondNodeWithRequests, sourcePath: '' },
+			});
+
+			const workflow = new DirectedGraph()
+				.addNodes(firstNode, tool1Node, secondNode)
+				.addConnections({ from: firstNode, to: secondNode })
+				.toWorkflow({
+					name: '',
+					active: false,
+					nodeTypes: customNodeTypes,
+					settings: { executionOrder: 'v1' },
+				});
+
+			const taskDataConnection = { main: [[{ json: { input: 'start' } }]] };
+			const executionData: IRunExecutionData = {
+				startData: { startNodes: [{ name: firstNode.name, sourceData: null }] },
+				resultData: { runData: {} },
+				executionData: {
+					contextData: {},
+					nodeExecutionStack: [
+						{
+							data: taskDataConnection,
+							node: firstNode,
+							source: { main: [{ previousNode: 'Start' }] },
+						},
+					],
+					metadata: {},
+					waitingExecution: {},
+					waitingExecutionSource: {},
+				},
+			};
+
+			const workflowExecute = new WorkflowExecute(additionalData, executionMode, executionData);
+
+			// ACT
+			const result = await workflowExecute.processRunExecutionData(workflow);
+
+			// ASSERT
+			// 1. First node should receive responses from its tool execution
+			expect(firstResponse).toBeDefined();
+			expect(firstResponse?.actionResponses).toHaveLength(1);
+
+			// 2. Second node should receive empty responses (not the first node's responses)
+			expect(secondResponse).toBeDefined();
+			expect(secondResponse?.actionResponses).toHaveLength(0); // This should be empty due to reset
+			expect(secondResponse?.metadata).toEqual({}); // Empty metadata
+
+			// 3. Both nodes should have completed successfully
+			const runData = result.data.resultData.runData;
+			expect(runData[firstNode.name]).toHaveLength(1);
+			expect(runData[secondNode.name]).toHaveLength(1);
+		});
 	});
 });
