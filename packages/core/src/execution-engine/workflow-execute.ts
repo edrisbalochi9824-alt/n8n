@@ -1697,6 +1697,140 @@ export class WorkflowExecute {
 		return { startedAt: new Date(), hooks };
 	}
 
+	// TODO: extract and test in isolation
+	// Support waiting in tools
+	//
+	// if runNodeData is Request
+	// 1. stop executing current node and put it as paused on the stack
+	//	- do any clean up of execution variables
+	// 2. put actions nodes on the stack, rewiring the graph potentially?
+	// 3. continue executionLoop
+	// 4. when hitting the paused node again, restore the state and call the execute method on the paused node again
+	//
+	// Notes:
+	// - only nodes that have a continue method can return a Request
+	//
+	// Todos:
+	// - figure out how to recreate the stack after a tool waited and the execution was persisted to the database
+	private handleRequests({
+		workflow,
+		currentNode,
+		request,
+		runIndex,
+		executionData,
+	}: {
+		workflow: Workflow;
+		currentNode: INode;
+		request: Request;
+		runIndex: number;
+		executionData: IExecuteData;
+	}): {
+		nodesToBeExecuted: Array<{
+			inputConnectionData: IConnection;
+			parentOutputIndex: number;
+			parentNode: string;
+			parentOutputData: INodeExecutionData[][];
+			runIndex: number;
+			nodeRunIndex: number;
+			metadata?: ITaskMetadata;
+		}>;
+	} {
+		// 1. collect nodes to be put on the stack
+		const nodesToBeExecuted: Array<{
+			inputConnectionData: IConnection;
+			parentOutputIndex: number;
+			parentNode: string;
+			parentOutputData: INodeExecutionData[][];
+			runIndex: number;
+			nodeRunIndex: number;
+			metadata?: ITaskMetadata;
+		}> = [];
+		const subNodeExecutionData: ITaskMetadata['subNodeExecutionData'] = {
+			actions: [],
+			metadata: request.metadata,
+		};
+		for (const action of request.actions) {
+			const node = workflow.getNode(action.nodeName)!;
+			node.rewireOutputLogTo = action.type;
+			const inputConnectionData: IConnection = {
+				// agents always have a main input
+				type: action.type,
+				node: action.nodeName,
+				// tools always have only one input
+				index: 0,
+			};
+			const parentNode = currentNode.name;
+			const parentOutputData: INodeExecutionData[][] = [
+				[
+					{
+						json: {
+							...action.input,
+							toolCallId: action.id,
+						},
+					},
+				],
+			];
+			const parentOutputIndex = 0;
+
+			const nodeRunData = this.runExecutionData.resultData.runData[node.name] ?? [];
+			nodeRunData.push({
+				inputOverride: { ai_tool: parentOutputData },
+				source: [],
+				executionIndex: 0,
+				executionTime: 0,
+				startTime: 0,
+			});
+			this.runExecutionData.resultData.runData[node.name] = nodeRunData;
+			const nodeRunIndex = nodeRunData.length - 1;
+
+			nodesToBeExecuted.push({
+				inputConnectionData,
+				parentOutputIndex,
+				parentNode,
+				parentOutputData,
+				runIndex,
+				nodeRunIndex,
+			});
+			subNodeExecutionData.actions.push({
+				action,
+				nodeName: action.nodeName,
+				runIndex: nodeRunIndex,
+			});
+		}
+
+		// 2. create metadata for current node
+		const parentNode = executionData.source?.main?.[0]?.previousNode;
+		if (!parentNode) {
+			Logger.warn('Cannot find parent node for subnode execution', {
+				executionNode: executionData.node.name,
+				sourceData: executionData.source,
+				workflowId: workflow.id,
+			});
+
+			return { nodesToBeExecuted: [] };
+		}
+		const connectionData: IConnection = {
+			// agents always have a main input
+			type: 'ai_tool',
+			node: executionData.node.name,
+			// agents always have only one input
+			index: 0,
+		};
+
+		// 3. add current node back to the bottom of the stack
+		nodesToBeExecuted.unshift({
+			inputConnectionData: connectionData,
+			parentOutputIndex: 0,
+			parentNode,
+			parentOutputData: executionData.data.main as INodeExecutionData[][],
+			runIndex,
+			nodeRunIndex: runIndex,
+			metadata: { subNodeExecutionData },
+		});
+
+		return { nodesToBeExecuted };
+	}
+
 	/**
 	 * Runs the given execution data.
 	 *
@@ -1954,137 +2088,29 @@ export class WorkflowExecute {
 									tryIndex++;
 								}
 
-								// Support waiting in tools
-								//
-								// if runNodeData is Request
-								// 1. stop executing current node and put it as paused on the stack
-								//	- do any clean up of execution variables
-								// 2. put actions nodes on the stack, rewiring the graph potentially?
-								// 3. continue executionLoop
-								// 4. when hitting the paused node again, restore the state and call the execute method on the paused node again
-								//
-								// Notes:
-								// - only nodes that have a continue method can return a Request
-								//
-								// Todos:
-								// - figure out how to recreate the stack after a tool waited and the execution was persisted to the database
-
 								// if runNodeData is Request
 								if ('actions' in runNodeData) {
-									// 1. collect actions
-									const actionData: Array<{
-										inputConnectionData: IConnection;
-										parentOutputIndex: number;
-										parentNode: string;
-										parentOutputData: INodeExecutionData[][];
-										runIndex: number;
-										nodeRunIndex: number;
-									}> = [];
-									const subNodeExecutionData: ITaskMetadata['subNodeExecutionData'] = {
-										actions: [],
-										metadata: runNodeData.metadata,
-									};
-									for (const action of runNodeData.actions) {
-										const node = workflow.getNode(action.nodeName)!;
-										node.rewireOutputLogTo = action.type;
-										const inputConnectionData: IConnection = {
-											// agents always have a main input
-											type: action.type,
-											node: action.nodeName,
-											// tools always have only one input
-											index: 0,
-										};
-										const parentNode = executionNode.name;
-										const parentOutputData: INodeExecutionData[][] = [
-											[
-												{
-													json: {
-														...action.input,
-														toolCallId: action.id,
-													},
-												},
-											],
-										];
-										const parentOutputIndex = 0;
-
-										const nodeRunData = this.runExecutionData.resultData.runData[node.name] ?? [];
-										nodeRunData.push({
-											inputOverride: { ai_tool: parentOutputData },
-											source: [],
-											executionIndex: 0,
-											executionTime: 0,
-											startTime: 0,
-										});
-										this.runExecutionData.resultData.runData[node.name] = nodeRunData;
-										const nodeRunIndex = nodeRunData.length - 1;
-
-										actionData.push({
-											inputConnectionData,
-											parentOutputIndex,
-											parentNode,
-											parentOutputData,
-											runIndex,
-											nodeRunIndex,
-										});
-										subNodeExecutionData.actions.push({
-											action,
-											nodeName: action.nodeName,
-											runIndex: nodeRunIndex,
-										});
-									}
-
-									// 2. create metadata for current node
-									const parentNode = executionData.source?.main?.[0]?.previousNode;
-									if (!parentNode) {
-										Logger.warn('Cannot find parent node for subnode execution', {
-											executionNode: executionData.node.name,
-											sourceData: executionData.source,
-											workflowId: workflow.id,
-										});
-										continue executionLoop;
-									}
-									const connectionData: IConnection = {
-										// agents always have a main input
-										type: 'ai_tool',
-										node: executionData.node.name,
-										// agents always have only one input
-										index: 0,
-									};
-
-									// 3. add current node back to stack
-									this.addNodeToBeExecuted(
+									const { nodesToBeExecuted } = this.handleRequests({
 										workflow,
-										connectionData,
-										// TODO: Output index of the parentNode
-										// get this from the source data somehow
-										0,
-										parentNode,
-										// TODO: fix types
-										executionData.data.main as INodeExecutionData[][],
-										// NOTE: parent's run index
+										currentNode: executionNode,
+										request: runNodeData,
 										runIndex,
-										// the current nodes run index
-										runIndex,
-										// metadata
-										{ subNodeExecutionData },
-									);
-									// 4. add actions to stack
-									for (const action of actionData) {
-										// 2. put actions nodes on the stack
+										executionData,
+									});
+
+									for (const nodeData of nodesToBeExecuted) {
 										this.addNodeToBeExecuted(
 											workflow,
-											action.inputConnectionData,
-											action.parentOutputIndex,
-											action.parentNode,
-											action.parentOutputData,
-											action.runIndex,
-											// this is here to not increase the run index further up
-											// in this function
-											action.nodeRunIndex,
+											nodeData.inputConnectionData,
+											nodeData.parentOutputIndex,
+											nodeData.parentNode,
+											nodeData.parentOutputData,
+											nodeData.runIndex,
+											nodeData.nodeRunIndex,
+											nodeData.metadata,
 										);
 									}
 
-									// 3. continue executionLoop
 									continue executionLoop;
 								}
 
