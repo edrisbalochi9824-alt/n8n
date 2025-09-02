@@ -355,5 +355,93 @@ describe('processRunExecutionData', () => {
 				finalResult: 'Agent completed with tool results',
 			});
 		});
+
+		test('skips waiting tools processing when parent node cannot be found', async () => {
+			// ARRANGE
+			// This test simulates the scenario where executionData.source.main[0].previousNode
+			// is null/undefined (line 2037-2044 in workflow-execute.ts)
+			let response: Response | undefined;
+
+			const tool1Node = createNodeData({ name: 'tool1', type: types.passThrough });
+			const tool1Input = { query: 'test input' };
+			const nodeTypeWithRequests = modifyNode(passThroughNode)
+				.return({
+					actions: [
+						{
+							actionType: 'ExecutionNodeAction',
+							nodeName: tool1Node.name,
+							input: tool1Input,
+							type: 'ai_tool',
+							id: 'action_1',
+							metadata: {},
+						},
+					],
+					metadata: { requestId: 'test_request' },
+				})
+				.return((response_) => {
+					response = response_;
+					return [[{ json: { finalResult: 'Agent completed with tool results' } }]];
+				})
+				.done();
+			const nodeWithRequests = createNodeData({
+				name: 'nodeWithRequests',
+				type: 'nodeWithRequests',
+			});
+
+			const nodeTypes = NodeTypes({
+				...nodeTypeArguments,
+				nodeWithRequests: { type: nodeTypeWithRequests, sourcePath: '' },
+			});
+
+			const workflow = new DirectedGraph()
+				.addNodes(nodeWithRequests, tool1Node)
+				.toWorkflow({ name: '', active: false, nodeTypes, settings: { executionOrder: 'v1' } });
+
+			const taskDataConnection = { main: [[{ json: { prompt: 'test prompt' } }]] };
+			const executionData: IRunExecutionData = {
+				startData: { startNodes: [{ name: nodeWithRequests.name, sourceData: null }] },
+				resultData: { runData: {} },
+				executionData: {
+					contextData: {},
+					nodeExecutionStack: [
+						{
+							data: taskDataConnection,
+							node: nodeWithRequests,
+							// Setting source to null triggers the "Cannot find parent node" condition
+							source: null,
+						},
+					],
+					metadata: {},
+					waitingExecution: {},
+					waitingExecutionSource: {},
+				},
+			};
+
+			const workflowExecute = new WorkflowExecute(additionalData, executionMode, executionData);
+
+			// ACT
+			const result = await workflowExecute.processRunExecutionData(workflow);
+
+			// ASSERT
+			const runData = result.data.resultData.runData;
+
+			// When parent node cannot be found (line 2038-2044), the execution loop continues
+			// which means the waiting tools processing is skipped entirely:
+
+			// 1. The agent node never gets re-executed with the Response callback
+			expect(runData[nodeWithRequests.name]).toBeUndefined();
+
+			// 2. Tool nodes get added to runData with inputOverride but are never actually executed
+			expect(runData[tool1Node.name]).toHaveLength(1);
+			expect(runData[tool1Node.name][0].inputOverride).toEqual({
+				ai_tool: [[{ json: { query: 'test input', toolCallId: 'action_1' } }]],
+			});
+			// The tool node should not have execution data since it was never run
+			expect(runData[tool1Node.name][0].data).toBeUndefined();
+			expect(runData[tool1Node.name][0].executionStatus).toBeUndefined();
+
+			// 3. The response callback is never called since the agent's second execution is skipped
+			expect(response).toBeUndefined();
+		});
 	});
 });
