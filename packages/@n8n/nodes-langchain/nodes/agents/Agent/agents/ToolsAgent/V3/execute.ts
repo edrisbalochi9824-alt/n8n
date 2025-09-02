@@ -212,10 +212,9 @@ export async function toolsAgentExecute(
 
 	if (response) {
 		const responses = response?.actionResponses;
+		const previousRequests = response?.metadata?.previousRequests;
+		steps.push.apply(steps, previousRequests);
 		for (const tool of responses) {
-			if (tool.action.metadata?.previousRequests) {
-				steps.push.apply(steps, tool.action.metadata.previousRequests);
-			}
 			const toolInput: IDataObject = {
 				...tool.action.input,
 				id: tool.action.id,
@@ -405,12 +404,14 @@ export async function toolsAgentExecute(
 					input: action.toolInput,
 					type: NodeConnectionTypes.AiTool,
 					id: action.toolCallId,
-					metadata: {
-						previousRequests: steps,
-					},
 				}));
 
-				return { actions };
+				return {
+					actions,
+					metadata: {
+						previousRequests: steps ?? [],
+					},
+				};
 			}
 		});
 
