@@ -13,6 +13,8 @@ import { logWrapper } from '@utils/logWrapper';
 import { getConnectionHintNoticeField } from '@utils/sharedFields';
 
 function getTool(ctx: ISupplyDataFunctions | IExecuteFunctions): Calculator {
+	const calculator = new Calculator();
+	calculator.name = ctx.getNode().name;
 	return new Calculator();
 }
 
@@ -51,10 +53,8 @@ export class ToolCalculator implements INodeType {
 	};
 
 	async supplyData(this: ISupplyDataFunctions): Promise<SupplyData> {
-		const calculator = new Calculator();
-		calculator.name = this.getNode().name;
 		return {
-			response: logWrapper(calculator, this),
+			response: logWrapper(getTool(this), this),
 		};
 	}
 

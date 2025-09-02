@@ -85,6 +85,7 @@ describe('WorkflowTool::WorkflowToolService', () => {
 				name: 'TestTool',
 				description: 'Test Description',
 				itemIndex: 0,
+				log: true,
 			};
 
 			const result = await service.createTool(toolParams);
@@ -100,6 +101,7 @@ describe('WorkflowTool::WorkflowToolService', () => {
 				name: 'TestTool',
 				description: 'Test Description',
 				itemIndex: 0,
+				log: true,
 			};
 
 			const TEST_RESPONSE = { msg: 'test response' };
@@ -390,6 +392,7 @@ describe('WorkflowTool::WorkflowToolService', () => {
 				name: 'Test Tool',
 				description: 'Test Description',
 				itemIndex: 0,
+				log: true,
 			});
 
 			const result = await tool.func('test query');
@@ -433,6 +436,7 @@ describe('WorkflowTool::WorkflowToolService', () => {
 				name: 'Test Tool',
 				description: 'Test Description',
 				itemIndex: 0,
+				log: true,
 			});
 
 			const result = await tool.func('test query');
@@ -485,6 +489,7 @@ describe('WorkflowTool::WorkflowToolService', () => {
 				name: 'Test Tool',
 				description: 'Test Description',
 				itemIndex: 0,
+				log: true,
 			});
 
 			const result = await tool.func('test query');
@@ -533,6 +538,7 @@ describe('WorkflowTool::WorkflowToolService', () => {
 				name: 'Test Tool',
 				description: 'Test Description',
 				itemIndex: 0,
+				log: true,
 			});
 
 			await tool.func('test query');
@@ -578,6 +584,7 @@ describe('WorkflowTool::WorkflowToolService', () => {
 				name: 'Test Tool',
 				description: 'Test Description',
 				itemIndex: 0,
+				log: true,
 			});
 
 			await tool.func('test query');
@@ -648,6 +655,7 @@ describe('WorkflowTool::WorkflowToolService', () => {
 				name: 'Test Tool',
 				description: 'Test Description',
 				itemIndex: 0,
+				log: true,
 			});
 
 			const result = await tool.func('test query');
@@ -679,6 +687,7 @@ describe('WorkflowTool::WorkflowToolService', () => {
 				name: 'Test Tool',
 				description: 'Test Description',
 				itemIndex: 0,
+				log: true,
 			});
 
 			const result = await tool.func('test query');
@@ -706,6 +715,7 @@ describe('WorkflowTool::WorkflowToolService', () => {
 				name: 'Test Tool',
 				description: 'Test Description',
 				itemIndex: 0,
+				log: true,
 			});
 
 			const result = await tool.func('test query');
@@ -737,6 +747,7 @@ describe('WorkflowTool::WorkflowToolService', () => {
 				name: 'Test Tool',
 				description: 'Test Description',
 				itemIndex: 0,
+				log: true,
 			});
 
 			const result = await tool.func('test query');
@@ -767,6 +778,7 @@ describe('WorkflowTool::WorkflowToolService', () => {
 				name: 'Test Tool',
 				description: 'Test Description',
 				itemIndex: 0,
+				log: true,
 			});
 
 			const result = await tool.func('test query');

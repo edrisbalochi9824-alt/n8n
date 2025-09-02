@@ -104,7 +104,7 @@ export class WorkflowToolService {
 				// Otherwise the runIndex will be shared between different executions
 				// Causing incorrect data to be passed to the sub-workflow and via $fromAI
 				let context = this.baseContext;
-				if (log) {
+				if ('cloneWith' in this.baseContext) {
 					context = this.baseContext.cloneWith({
 						runIndex: localRunIndex,
 						inputData: [[{ json: { query } }]],
@@ -236,7 +236,7 @@ export class WorkflowToolService {
 	 * Executes specified sub-workflow with provided inputs
 	 */
 	private async executeSubWorkflow(
-		context: ISupplyDataFunctions,
+		context: ISupplyDataFunctions | IExecuteFunctions,
 		workflowInfo: IExecuteWorkflowInfo,
 		items: INodeExecutionData[],
 		workflowProxy: IWorkflowDataProxyData,
@@ -277,7 +277,7 @@ export class WorkflowToolService {
 	 * This function will be called as part of the tool execution (from the toolHandler)
 	 */
 	private async runFunction(
-		context: ISupplyDataFunctions,
+		context: ISupplyDataFunctions | IExecuteFunctions,
 		query: string | IDataObject,
 		itemIndex: number,
 		runManager?: CallbackManagerForToolRun,
@@ -310,7 +310,7 @@ export class WorkflowToolService {
 	 * Gets the sub-workflow info based on the source (database or parameter)
 	 */
 	private async getSubWorkflowInfo(
-		context: ISupplyDataFunctions,
+		context: ISupplyDataFunctions | IExecuteFunctions,
 		source: string,
 		itemIndex: number,
 		workflowProxy: IWorkflowDataProxyData,
@@ -348,7 +348,7 @@ export class WorkflowToolService {
 	}
 
 	private prepareRawData(
-		context: ISupplyDataFunctions,
+		context: ISupplyDataFunctions | IExecuteFunctions,
 		query: string | IDataObject,
 		itemIndex: number,
 	): IDataObject {
@@ -371,7 +371,7 @@ export class WorkflowToolService {
 	 * Prepares the sub-workflow items for execution
 	 */
 	private async prepareWorkflowItems(
-		context: ISupplyDataFunctions,
+		context: ISupplyDataFunctions | IExecuteFunctions,
 		query: string | IDataObject,
 		itemIndex: number,
 		rawData: IDataObject,
@@ -396,7 +396,6 @@ export class WorkflowToolService {
 		return [newItem] as INodeExecutionData[];
 	}
 
-	private async createToolWithoutLogging();
 	/**
 	 *  Create structured tool by parsing the sub-workflow input schema
 	 */
