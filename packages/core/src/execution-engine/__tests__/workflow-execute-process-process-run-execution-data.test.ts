@@ -246,7 +246,7 @@ describe('processRunExecutionData', () => {
 							input: tool1Input,
 							type: 'ai_tool',
 							id: 'action_1',
-							metadata: {},
+							metadata: { step: 1 },
 						},
 						{
 							actionType: 'ExecutionNodeAction',
@@ -254,14 +254,29 @@ describe('processRunExecutionData', () => {
 							input: tool2Input,
 							type: 'ai_tool',
 							id: 'action_2',
-							metadata: {},
+							metadata: { step: 1 },
 						},
 					],
-					metadata: { requestId: 'test_request' },
+					metadata: { requestId: 'test_request_step1' },
 				})
 				.return((response_) => {
 					response = response_;
-					return [[{ json: { finalResult: 'Agent completed with tool results' } }]];
+					// Verify the response contains the expected action responses
+					expect(response_).toBeDefined();
+					expect(response_?.actionResponses).toHaveLength(2);
+
+					// Return final result incorporating the response data
+					return [
+						[
+							{
+								json: {
+									finalResult: 'Completed with response data',
+									responseMetadata: response_?.metadata as IDataObject,
+									actionCount: response_?.actionResponses?.length,
+								},
+							},
+						],
+					];
 				})
 				.done();
 			const nodeWithRequests = createNodeData({
@@ -303,25 +318,31 @@ describe('processRunExecutionData', () => {
 			const result = await workflowExecute.processRunExecutionData(workflow);
 
 			// ASSERT
-			// nodeWithRequests has been called with the correct responses
-			expect(response?.actionResponses).toHaveLength(2);
-			for (const r of response?.actionResponses ?? []) {
-				if (r.action.id === 'action_1') {
-					const data = r.data.data?.['ai_tool'];
-					expect(data).toHaveLength(1); // one run
-					expect(data![0]).toHaveLength(1); // one item
-					expect(data![0]![0]).toMatchObject({ json: tool1Input });
-				}
-
-				if (r.action.id === 'action_2') {
-					const data = r.data.data?.['ai_tool'];
-					expect(data).toHaveLength(1); // one run
-					expect(data![0]).toHaveLength(1); // one item
-					expect(data![0]![0]).toMatchObject({ json: tool2Input });
-				}
-			}
-
 			const runData = result.data.resultData.runData;
+
+			// 1. Verify the Response object was passed to the second execution
+			expect(response).toBeDefined();
+			expect(response?.actionResponses).toHaveLength(2);
+			expect(response?.metadata).toEqual({ requestId: 'test_request_step1' });
+
+			// 2. Verify each action response contains the correct data and metadata
+			const actionResponses = response?.actionResponses ?? [];
+			const action1Response = actionResponses.find((r) => r.action.id === 'action_1');
+			const action2Response = actionResponses.find((r) => r.action.id === 'action_2');
+
+			expect(action1Response).toBeDefined();
+			expect(action1Response?.action.metadata).toEqual({ step: 1 });
+			expect(action1Response?.data.data?.ai_tool?.[0]?.[0]?.json).toMatchObject({
+				query: 'test input',
+				toolCallId: 'action_1',
+			});
+
+			expect(action2Response).toBeDefined();
+			expect(action2Response?.action.metadata).toEqual({ step: 1 });
+			expect(action2Response?.data.data?.ai_tool?.[0]?.[0]?.json).toMatchObject({
+				data: 'another input',
+				toolCallId: 'action_2',
+			});
 
 			// The agent should have been executed and returned a Request with actions
 			expect(runData[nodeWithRequests.name]).toHaveLength(1);
@@ -344,15 +365,13 @@ describe('processRunExecutionData', () => {
 			expect(runData[tool2Node.name][0].data).toBeDefined();
 			expect(runData[tool2Node.name][0].executionStatus).toBe('success');
 
-			// Agent should have completed successfully with final result
+			// 3. Verify the final node output includes response data
 			expect(runData[nodeWithRequests.name][0].data).toBeDefined();
 			expect(runData[nodeWithRequests.name][0].executionStatus).toBe('success');
-			const nodeWithRequestsOutput = runData[nodeWithRequests.name][0].data?.main?.[0]?.[0]?.json;
-			expect(runData[nodeWithRequests.name][0].data?.main?.[0]?.[0]?.json?.finalResult).toBe(
-				'Agent completed with tool results',
-			);
-			expect(nodeWithRequestsOutput).toMatchObject({
-				finalResult: 'Agent completed with tool results',
+			expect(runData[nodeWithRequests.name][0].data?.main?.[0]?.[0]?.json).toMatchObject({
+				finalResult: 'Completed with response data',
+				responseMetadata: { requestId: 'test_request_step1' },
+				actionCount: 2,
 			});
 		});
 
