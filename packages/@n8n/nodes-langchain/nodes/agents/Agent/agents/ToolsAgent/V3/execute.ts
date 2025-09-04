@@ -173,7 +173,7 @@ async function processEventStream(
 }
 
 export type RequestResponseMetadata = {
-	toolCallId: number;
+	itemIndex?: number;
 	previousRequests: ToolCallData[];
 };
 
@@ -189,32 +189,18 @@ type ToolCallData = {
 	observation: string;
 };
 
-/* -----------------------------------------------------------
-   Main Executor Function
------------------------------------------------------------ */
-/**
- * The main executor method for the Tools Agent.
- *
- * This function retrieves necessary components (model, memory, tools), prepares the prompt,
- * creates the agent, and processes each input item. The error handling for each item is also
- * managed here based on the node's continueOnFail setting.
- *
- * @param this Execute context. SupplyDataContext is passed when agent is as a tool
- *
- * @returns The array of execution data for all processed items
- */
-export async function toolsAgentExecute(
-	this: IExecuteFunctions | ISupplyDataFunctions,
-	response?: Response<RequestResponseMetadata>,
-): Promise<INodeExecutionData[][] | Request<RequestResponseMetadata>> {
+function buildSteps(
+	response: Response<RequestResponseMetadata> | undefined,
+	itemIndex: number,
+): ToolCallData[] {
 	const steps: ToolCallData[] = [];
-	this.logger.debug('Executing Tools Agent V2');
 
 	if (response) {
 		const responses = response?.actionResponses;
 		const previousRequests = response?.metadata?.previousRequests;
-		steps.push.apply(steps, previousRequests);
-		for (const tool of responses) {
+		for (const tool of responses.filter(
+			(response) => response.action?.metadata?.itemIndex === itemIndex,
+		)) {
 			const toolInput: IDataObject = {
 				...tool.action.input,
 				id: tool.action.id,
@@ -256,8 +242,33 @@ export async function toolsAgentExecute(
 			steps.push(toolResult);
 		}
 	}
+	return steps;
+}
 
-	const returnData: Array<INodeExecutionData | Request<RequestResponseMetadata>> = [];
+/* -----------------------------------------------------------
+   Main Executor Function
+----------------------------------------------------------- */
+/**
+ * The main executor method for the Tools Agent.
+ *
+ * This function retrieves necessary components (model, memory, tools), prepares the prompt,
+ * creates the agent, and processes each input item. The error handling for each item is also
+ * managed here based on the node's continueOnFail setting.
+ *
+ * @param this Execute context. SupplyDataContext is passed when agent is as a tool
+ *
+ * @returns The array of execution data for all processed items
+ */
+export async function toolsAgentExecute(
+	this: IExecuteFunctions | ISupplyDataFunctions,
+	response?: Response<RequestResponseMetadata>,
+): Promise<INodeExecutionData[][] | Request<RequestResponseMetadata>> {
+	const steps: ToolCallData[] = [];
+	this.logger.debug('Executing Tools Agent V2');
+
+	const returnData: INodeExecutionData[] = [];
+	let request: Request<RequestResponseMetadata> | undefined = undefined;
+
 	const items = this.getInputData();
 	const batchSize = this.getNodeParameter('options.batching.batchSize', 0, 1) as number;
 	const delayBetweenBatches = this.getNodeParameter(
@@ -285,6 +296,12 @@ export async function toolsAgentExecute(
 		const batch = items.slice(i, i + batchSize);
 		const batchPromises = batch.map(async (_item, batchItemIndex) => {
 			const itemIndex = i + batchItemIndex;
+
+			if (response && response?.metadata?.itemIndex === itemIndex) {
+				return null;
+			}
+
+			const steps = buildSteps(response, itemIndex);
 
 			const input = getPromptInputByType({
 				ctx: this,
@@ -404,13 +421,14 @@ export async function toolsAgentExecute(
 					input: action.toolInput,
 					type: NodeConnectionTypes.AiTool,
 					id: action.toolCallId,
+					metadata: {
+						itemIndex,
+					},
 				}));
 
 				return {
 					actions,
-					metadata: {
-						previousRequests: steps ?? [],
-					},
+					metadata: { previousRequests: steps ?? [] },
 				};
 			}
 		});
@@ -434,8 +452,16 @@ export async function toolsAgentExecute(
 				}
 			}
 			const response = result.value;
+
 			if ('actions' in response) {
-				returnData.push(response);
+				if (!request) {
+					request = {
+						actions: response.actions,
+						metadata: response.metadata,
+					};
+				} else {
+					request.actions.push(...response.actions);
+				}
 				return;
 			}
 
@@ -468,13 +494,10 @@ export async function toolsAgentExecute(
 		}
 	}
 	// Check if we have any Request objects (tool calls)
-	const requestResult = returnData.find(
-		(item): item is Request<RequestResponseMetadata> => 'actions' in item,
-	);
-	if (requestResult) {
-		return requestResult;
+	if (request) {
+		return request;
 	}
 
 	// Otherwise return execution data
-	return [returnData as INodeExecutionData[]];
+	return [returnData];
 }
